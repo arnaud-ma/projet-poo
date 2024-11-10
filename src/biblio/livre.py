@@ -4,15 +4,21 @@ import abc
 import datetime
 from inspect import isabstract
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
+from zipfile import ZipFile, is_zipfile
 
-import ebookmeta
 import pymupdf
+from lxml import etree
 
 if TYPE_CHECKING:
     from os import PathLike
 
     StrPath: TypeAlias = str | PathLike[str]
+
+
+def get_contenu_zip(file: StrPath, opf: StrPath) -> bytes:
+    with ZipFile(file) as z:
+        return z.read(str(opf))
 
 
 class RealPath(Path):
@@ -76,7 +82,7 @@ class Livre(base_livre):
             msg = "Les sous-classes de Livre doivent avoir un suffixe."
             raise ValueError(msg)
 
-        cls.SUFFIX = suffix
+        cls.SUFFIX = suffix  # type: ignore[misc]
 
     def __init__(self, ressource: StrPath) -> None:
         self.ressource = RealPath(ressource)
@@ -86,7 +92,7 @@ class Livre(base_livre):
         return self.SUFFIX.upper()
 
 
-class PDF(Livre, suffix="pdf"):
+class Pdf(Livre, suffix="pdf"):
     def __init__(self, ressource: StrPath) -> None:
         super().__init__(ressource)
         self.reader = pymupdf.open(self.ressource)
@@ -115,24 +121,85 @@ class PDF(Livre, suffix="pdf"):
         return date.strftime("%d/%m/%Y") if date else None
 
 
-class EPUB(Livre, suffix="epub"):
-    def __init__(self, ressource: StrPath):
-        super().__init__(ressource)
-        # besoin de convertir en str puisque ebookmeta ne supporte pas Path
-        self._metadata = ebookmeta.get_metadata(str(self.ressource))
+class Epub(Livre, suffix="epub"):
+    # Définition des namespaces XML pour les éléments spécifiques d'un fichier EPUB
+    namespaces_xml: ClassVar = {
+        "n": "urn:oasis:names:tc:opendocument:xmlns:container",
+        "opf": "http://www.idpf.org/2007/opf",
+        "dc": "http://purl.org/dc/elements/1.1/",
+    }
 
-    def titre(self):
-        return self._metadata.title or None
+    # Chemin vers le dossier contenant les métadonnées d'un fichier EPUB
+    meta_dir: ClassVar = "/opf:package/opf:metadata"
 
-    def auteur(self):
-        return ",".join(self._metadata.author_list) or None
+    def __init__(self, file: StrPath) -> None:
+        self.file = Path(file)
 
-    def sujet(self):
-        return ",".join(self._metadata.tag_list) or None
+        # Les fichiers EPUB sont des archives ZIP
+        if not is_zipfile(self.file):
+            msg = "Fichier EPUB invalide"
+            raise ValueError(msg)
 
-    def langue(self):
-        return self._metadata.lang
+        # Récupération du fichier container.xml, qui contient le chemin du fichier OPF
+        # (le fichier OPF contient les métadonnées du livre)
+        container = get_contenu_zip(self.file, "META-INF/container.xml")
 
-    def date(self):
-        # TODO
-        return self._metadata.publish_info.year
+        # Récupération du chemin du fichier OPF et de son contenu avec lxml.etree
+        tree = etree.fromstring(container)  # noqa: S320
+        self.opf = Path(
+            self.tree_xpath("n:rootfiles/n:rootfile/@full-path", tree=tree)[0],
+        )
+        self.tree = etree.fromstring(get_contenu_zip(self.file, self.opf))  # noqa: S320
+
+        # Récupération de la version du fichier EPUB
+        self.version = self.tree_xpath("/opf:package/@version")[0]
+
+        if self.version[:1] != "2":
+            # TODO: gerer epub3
+            msg = "Seuls les fichiers EPUB version 2 sont supportés pour le moment."
+            raise NotImplementedError(msg)
+
+    # La plupart des metadonnées sont stockées dans {meta_dir}/dc:*.
+    # Voir: https://www.w3.org/TR/epub-33/#sec-metadata-values
+
+    def titre(self) -> str | None:
+        return self.xpath_str(f"{self.meta_dir}/dc:title")
+
+    def auteurs(self) -> list[str]:
+        return self.tree_xpath_liststr(f"{self.meta_dir}/dc:creator")
+
+    def auteur(self) -> str | None:
+        return ",".join(self.auteurs())
+
+    def sujets(self) -> list[str]:
+        return self.tree_xpath_liststr(f"{self.meta_dir}/dc:subject")
+
+    def sujet(self) -> str | None:
+        return ",".join(self.sujets())
+
+    def langue(self) -> str | None:
+        return self.xpath_str(f"{self.meta_dir}/dc:language")
+
+    def date(self) -> str | None:
+        return self.xpath_str(f"{self.meta_dir}/dc:date")
+
+    def xpath_str(self, path) -> str | None:
+        """
+        Execute une requête XPath et renvoie le texte. Assume qu'il n'y a qu'un seul élément
+        correspondant à la requête. Renvoie None si aucun élément n'est trouvé.
+        """
+        node = self.tree_xpath(path)
+        if isinstance(node, list):
+            node = node[0] if node else None
+        return node.text if node is not None else None
+
+    def tree_xpath_liststr(self, path) -> list[str]:
+        """
+        Execute une requête XPath et renvoie une liste de texte. Il peut y avoir plusieurs
+        ou aucun élément correspondant à la requête.
+        """
+        return [node.text for node in self.tree_xpath(path) if node is not None]
+
+    def tree_xpath(self, path, tree: etree._Element | None = None) -> Any:
+        tree = self.tree if tree is None else tree
+        return tree.xpath(str(path), namespaces=self.namespaces_xml)
