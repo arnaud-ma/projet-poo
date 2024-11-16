@@ -90,6 +90,13 @@ class Livre(base_livre):
         self.ressource = RealPath(ressource)
         self._fichier = None
 
+    @abc.abstractmethod
+    def auteurs(self) -> list[str]:
+        raise NotImplementedError("à définir dans les sous-classes")
+
+    def auteur(self) -> str:
+        return ",".join(self.auteurs())
+
     def type(self):
         return self.SUFFIX.upper()
 
@@ -135,7 +142,7 @@ class Pdf(Livre, suffix="pdf"):
                 return value
         return None
 
-    def auteur(self) -> list[str]:
+    def auteurs(self) -> list[str]:
         return self.from_metadata("dc:creator") or []
 
     def sujet(self) -> set[str]:
@@ -259,9 +266,6 @@ class Epub(Livre, suffix="epub"):
 
     def auteurs(self):
         return self.from_metadata_list("dc:creator")
-
-    def auteur(self):
-        return ",".join(self.auteurs())
 
     def sujets(self):
         return self.from_metadata_list("dc:subject")
