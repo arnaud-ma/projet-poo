@@ -3,6 +3,7 @@ name = "bibli"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "lxml-stubs>=0.5.1",
     "lxml>=5.3.0",
-    "pymupdf>=1.24.13",
+    "pikepdf>=9.4.1",
 ]

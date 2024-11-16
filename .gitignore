@@ -1,6 +1,9 @@
 a.py
+b.py
+c.py
 temp*/
 *.lock
+*.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

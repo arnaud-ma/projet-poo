@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import abc
+import contextlib
 import datetime
+import functools
 from inspect import isabstract
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 from zipfile import ZipFile, is_zipfile
 
-import pymupdf
+import pikepdf
 from lxml import etree
 
 if TYPE_CHECKING:
@@ -91,34 +93,119 @@ class Livre(base_livre):
     def type(self):
         return self.SUFFIX.upper()
 
+    def __str__(self):
+        return f"{self.__class__.__name__}({self.ressource})"
+
 
 class Pdf(Livre, suffix="pdf"):
     def __init__(self, ressource: StrPath) -> None:
         super().__init__(ressource)
-        self.reader = pymupdf.open(self.ressource)
-        self._metadata = self.reader.metadata or {}
+        self.pdf_pike = None
 
-    def from_metadata(self, key):
+    @staticmethod
+    def besoin_ouverture(func):
+        """
+        Decorateur qui modifie la fonction pour renvoyer automatiquement une erreur
+        si le fichier PDF n'est pas ouvert.
+        """
+
+        @functools.wraps(func)
+        def wrapper(self: Pdf, *args, **kwargs):
+            if self.pdf_pike is None:
+                cls_name = self.__class__.__name__
+                msg = (
+                    f"Le fichier PDF n'est pas ouvert. Utiliser {cls_name}.open() ou la syntaxe 'with'"
+                    f" avant d'appeler {cls_name}.{func.__name__}()."
+                )
+                raise ValueError(msg)
+            return func(self, *args, **kwargs)
+
+        return wrapper
+
+    @besoin_ouverture
+    def from_metadata(self, key) -> Any:
         return self._metadata.get(key, None)
 
-    # fmt: off
-    def titre(self): return self.from_metadata("title")
-    def auteur(self): return self.from_metadata("author")
-    def sujet(self): return self.from_metadata("subject")
-    def langue(self): return None  # noqa: PLR6301
-    # fmt: on
+    # https://github.com/adobe/XMP-Toolkit-SDK/blob/main/docs/XMPSpecificationPart1.pdf
+    # https://developer.adobe.com/xmp/docs/XMPNamespaces/
 
-    def date_obj(self):
-        raw_pdf_date = self.from_metadata("creationDate")
-        if not raw_pdf_date:
+    def titre(self) -> str | None:
+        for value in map(self.from_metadata, ["dc:title", "xmp:Nickname"]):
+            if value:
+                return value
+        return None
+
+    def auteur(self) -> list[str]:
+        return self.from_metadata("dc:creator") or []
+
+    def sujet(self) -> set[str]:
+        # on itère sur les valeurs renvoyées par chaque clé
+        # qui peut contenir des sujets
+        # et on prend dès qu'on trouve une clé qui fonctionne
+        # avec dans l'ordre de priorité du plus au moins courant
+        for value in map(
+            self.from_metadata,
+            ["dc:subject", "xmp:Label", "xmpDM:genre", "pdf:Keywords"],
+        ):
+            if value and isinstance(value, str):
+                return {value}
+            if isinstance(value, set):
+                filter_value = set(filter(None, value))
+                if filter_value:
+                    return filter_value
+        return set()
+
+    def langue(self) -> set[str]:
+        x = self.from_metadata("dc:language")
+        if isinstance(x, str) and x:
+            return {x}
+        return x or set()
+
+    def raw_date(self) -> str | None:
+        return self.from_metadata("dc:date")
+
+    def date_obj(self) -> datetime.datetime | None:
+        raw_date = self.raw_date()
+        if raw_date is None:
             return None
-        date = raw_pdf_date[2:10]
-        # TODO: gerer les timezone (utc + 2 ou autre)
-        return datetime.datetime.strptime(date, "%Y%m%d")  # noqa: DTZ007
+        with contextlib.suppress(ValueError):
+            return datetime.datetime.fromisoformat(raw_date)
+        return None
 
-    def date(self):
+    def date(self, fmt="%d/%m/%Y") -> str | None:
         date = self.date_obj()
-        return date.strftime("%d/%m/%Y") if date else None
+        return date.strftime(fmt) if date else None
+
+    def open(self):
+        """
+        Ouvre le fichier PDF. Doit toujours être appelé avant d'accéder aux métadonnées
+        du fichier.
+
+        Considérer l'utilisation de la syntaxe 'with' au lieu de l'appel direct à
+        open() et close().
+        """
+        self.pdf_pike = pikepdf.open(self.ressource)
+        self._metadata = self.pdf_pike.open_metadata()
+        return self
+
+    def close(self):
+        """
+        Ferme le fichier PDF. Doit toujours être appelé après avoir ouvert le fichier
+        avec PDF.open(). Ne fait rien si le fichier n'est pas ouvert.
+
+        Considérer l'utilisation de la syntaxe 'with' au lieu de l'appel direct à
+        open() et close().
+        """
+        if self.pdf_pike is None:
+            return
+        self.pdf_pike.close()
+        self.pdf_pike = None
+
+    def __enter__(self):
+        return self.open()
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.close()
 
 
 class Epub(Livre, suffix="epub"):
@@ -161,27 +248,32 @@ class Epub(Livre, suffix="epub"):
 
     # La plupart des metadonnées sont stockées dans {meta_dir}/dc:*.
     # Voir: https://www.w3.org/TR/epub-33/#sec-metadata-values
+    def from_metadata(self, key) -> str | None:
+        return self.xpath_str(f"{self.meta_dir}/{key}")
 
-    def titre(self) -> str | None:
-        return self.xpath_str(f"{self.meta_dir}/dc:title")
+    def from_metadata_list(self, key) -> list[str]:
+        return self.tree_xpath_liststr(f"{self.meta_dir}/{key}")
 
-    def auteurs(self) -> list[str]:
-        return self.tree_xpath_liststr(f"{self.meta_dir}/dc:creator")
+    def titre(self):
+        return self.from_metadata("dc:title")
 
-    def auteur(self) -> str | None:
+    def auteurs(self):
+        return self.from_metadata_list("dc:creator")
+
+    def auteur(self):
         return ",".join(self.auteurs())
 
-    def sujets(self) -> list[str]:
-        return self.tree_xpath_liststr(f"{self.meta_dir}/dc:subject")
+    def sujets(self):
+        return self.from_metadata_list("dc:subject")
 
-    def sujet(self) -> str | None:
+    def sujet(self):
         return ",".join(self.sujets())
 
-    def langue(self) -> str | None:
-        return self.xpath_str(f"{self.meta_dir}/dc:language")
+    def langue(self):
+        return self.from_metadata("dc:language")
 
-    def date(self) -> str | None:
-        return self.xpath_str(f"{self.meta_dir}/dc:date")
+    def date(self):
+        return self.from_metadata("dc:date")
 
     def xpath_str(self, path) -> str | None:
         """
