@@ -2,7 +2,7 @@
 import requests
 from bs4 import BeautifulSoup
 
-def collete(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
+def collecte(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
     reponse = requests.get(source) # recpere le contenu de la page
     print(reponse.status_code)
     if reponse.status_code==200: # verification de l'ouverture de l'url
@@ -33,14 +33,14 @@ def collete(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire
     return[nom_auteurs,nom_livrres]
 
 
-def parcourire():
+def parcourir():
     pages=get_all_pages()
     i=0
     for page in pages[:4]:
-        collete(source=page)
+        collecte(source=page)
             
 
 
-print(collete())
+print(collecte())
 
 
