@@ -223,7 +223,7 @@ class Epub(Livre, suffix="epub"):
         "dc": "http://purl.org/dc/elements/1.1/",
     }
 
-    # Chemin vers le dossier contenant les métadonnées d'un fichier EPUB
+    #  Chemin vers le dossier contenant les métadonnées d'un fichier EPUB
     meta_dir: ClassVar = "/opf:package/opf:metadata"
 
     def __init__(self, file: StrPath) -> None:
