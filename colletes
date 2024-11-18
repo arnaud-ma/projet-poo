@@ -1,0 +1,46 @@
+# bin/env/phython
+import requests
+from bs4 import BeautifulSoup
+
+def collete(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
+    reponse = requests.get(source) # recpere le contenu de la page
+    print(reponse.status_code)
+    if reponse.status_code==200: # verification de l'ouverture de l'url
+        soup = BeautifulSoup ( reponse.content , "html.parser") # recupere le code html
+        livres=soup.find_all("div",class_="Libros_Container")
+
+        for livre in livres:
+            try:
+                nom_livrres = livre.find("p",class_="Libros_Titulo").text
+            except AttributeError as e:
+                nom_livrres=" "
+
+            try:
+                nom_auteurs =livre.find("p",class_="Libros_Atribucion").text
+            except AttributeError as e:
+                nom_auteurs=" "
+
+            
+            chemin=r"C:\Users\mawak\projet.poo" #lieu de stocage
+            with open(chemin,'a') as f:
+                f.write(f"{nom_auteurs}")
+                f.write(f"{nom_livrres}")
+                f.close
+                
+    else:
+       print ("erreur",reponse.status_code)
+
+    return[nom_auteurs,nom_livrres]
+
+
+def parcourire():
+    pages=get_all_pages()
+    i=0
+    for page in pages[:4]:
+        collete(source=page)
+            
+
+
+print(collete())
+
+
