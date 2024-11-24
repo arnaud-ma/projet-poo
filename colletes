@@ -1,46 +1,32 @@
 # bin/env/phython
 import requests
+import re
 from bs4 import BeautifulSoup
 
-def collecte(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
-    reponse = requests.get(source) # recpere le contenu de la page
-    print(reponse.status_code)
+# Etape 1 récuérer le html de la source
+# Etape 2: récupérer tous les liens dans la source
+# Etape 3: filter les lienspour n'avoir que des pdf (avec requests body)
+# Etape 4: telecharger le contenu de tous les pdf avec write
+
+def getHtml(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
+    reponse = requests.get(source) # demande les document html de la page
     if reponse.status_code==200: # verification de l'ouverture de l'url
+        reponse.text # metre en format texte
         soup = BeautifulSoup ( reponse.content , "html.parser") # recupere le code html
-        livres=soup.find_all("div",class_="Libros_Container")
-
-        for livre in livres:
-            try:
-                nom_livrres = livre.find("p",class_="Libros_Titulo").text
-            except AttributeError as e:
-                nom_livrres=" "
-
-            try:
-                nom_auteurs =livre.find("p",class_="Libros_Atribucion").text
-            except AttributeError as e:
-                nom_auteurs=" "
-
-            
-            chemin=r"C:\Users\mawak\projet.poo" #lieu de stocage
-            with open(chemin,'a') as f:
-                f.write(f"{nom_auteurs}")
-                f.write(f"{nom_livrres}")
-                f.close
-                
+        return soup
     else:
        print ("erreur",reponse.status_code)
 
-    return[nom_auteurs,nom_livrres]
-
-
-def parcourir():
-    pages=get_all_pages()
+def getURL(soup):
+    stokURL=[]
     i=0
-    for page in pages[:4]:
-        collecte(source=page)
+    # recuper tous les liens ,les stoker dans un tableau
+    for lien in soup.find_all('a',attrs={'href': re.compile("^https://")}):
+        stokURL[i] = lien.get('href') 
+        i+=1 
             
 
 
-print(collecte())
+
 
 
