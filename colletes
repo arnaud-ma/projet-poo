@@ -1,6 +1,7 @@
 # bin/env/phython
 import requests
 import re
+import numpy
 from bs4 import BeautifulSoup
 
 # Etape 1 récuérer le html de la source
@@ -8,7 +9,7 @@ from bs4 import BeautifulSoup
 # Etape 3: filter les lienspour n'avoir que des pdf (avec requests body)
 # Etape 4: telecharger le contenu de tous les pdf avec write
 
-def getHtml(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
+def get_Html(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
     reponse = requests.get(source) # demande les document html de la page
     if reponse.status_code==200: # verification de l'ouverture de l'url
         reponse.text # metre en format texte
@@ -17,16 +18,22 @@ def getHtml(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire
     else:
        print ("erreur",reponse.status_code)
 
-def getURL(soup):
+def get_URL(soup):
     stokURL=[]
-    i=0
     # recuper tous les liens ,les stoker dans un tableau
     for lien in soup.find_all('a',attrs={'href': re.compile("^https://")}):
-        stokURL[i] = lien.get('href') 
-        i+=1 
-            
+       stokURL= numpy.append (stokURL,lien.get('href'))
+        
+    return stokURL
 
 
+if __name__=="__main__":
+
+    html=get_Html()
+    urls=get_URL(html)
+    for i in urls:
+        print(urls)
+ 
 
 
 
