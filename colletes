@@ -6,11 +6,11 @@ from bs4 import BeautifulSoup
 
 # Etape 1 récuérer le html de la source
 # Etape 2: récupérer tous les liens dans la source
-# Etape 3: filter les lienspour n'avoir que des pdf (avec requests body)
+# Etape 3: filter les liens pour n'avoir que des pdf (avec requests body)
 # Etape 4: telecharger le contenu de tous les pdf avec write
 
 def get_Html(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
-    reponse = requests.get(source) # demande les document html de la page
+    reponse = requests.get(source) # ouverture et demande les documents html de la page
     if reponse.status_code==200: # verification de l'ouverture de l'url
         reponse.text # metre en format texte
         soup = BeautifulSoup ( reponse.content , "html.parser") # recupere le code html
@@ -18,19 +18,32 @@ def get_Html(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoir
     else:
        print ("erreur",reponse.status_code)
 
-def get_URL(soup):
+def get_lien_pdf(soup):
     stokURL=[]
     # recuper tous les liens ,les stoker dans un tableau
     for lien in soup.find_all('a',attrs={'href': re.compile("^https://")}):
-       stokURL= numpy.append (stokURL,lien.get('href'))
-        
+       if ('.pdf' in lien.get('href', [])):
+            stokURL= numpy.append (stokURL,lien.get('href'))
+   
     return stokURL
 
+def charger(url):
+    lien=get_lien_pdf(get_Html(url))
+   # télécharge le fichier
+    response = requests.get(lien.get('href'))
 
+    # sauvgarder le fichier
+    pdf = open("pdf"+str(i)+".pdf", 'wb')
+    pdf.write(response.content)
+    pdf.close()
+    print("File ", i, " downloaded")
+
+
+# mini-programe teste
 if __name__=="__main__":
 
     html=get_Html()
-    urls=get_URL(html)
+    urls=get_lien_pdf(html)
     for i in urls:
         print(urls)
  
