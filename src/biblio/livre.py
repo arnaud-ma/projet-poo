@@ -13,6 +13,7 @@ import pikepdf
 from lxml import etree
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from os import PathLike
 
     StrPath: TypeAlias = str | PathLike[str]
@@ -91,20 +92,51 @@ class Livre(base_livre):
         self._fichier = None
 
     @abc.abstractmethod
-    def auteurs(self) -> list[str]:
-        raise NotImplementedError("à définir dans les sous-classes")
+    def auteurs(self) -> list[str]: ...
 
     def auteur(self) -> str:
         return ",".join(self.auteurs())
 
+    @abc.abstractmethod
+    def sujets(self) -> set[str]: ...
+
+    def sujet(self) -> str:
+        return ",".join(self.sujets())
+
     def type(self):
         return self.SUFFIX.upper()
 
-    def __str__(self):
+    def __repr__(self):
         return f"{self.__class__.__name__}({self.ressource})"
+
+    def open(self):
+        return self
+
+    def close(self):
+        """Ferme le fichier. Doit être appelé après avoir ouvert le fichier."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
 
 
 class Pdf(Livre, suffix="pdf"):
+    """Classe pour les fichiers PDF."""
+
+    """
+    Les clés de métadonnées sont stockées dans un dictionnaire de listes.
+    LA liste correspond à l'ordre de priorité des clés, pour un nom de clé donné.
+    """
+    _CLES: ClassVar = {
+        "auteurs": ["dc:creator"],
+        "date": ["dc:date"],
+        "langue": ["dc:language"],
+        "sujets": ["dc:subject", "xmp:Label", "xmpDM:genre", "pdf:Keywords"],
+        "titre": ["dc:title", "xmp:Nickname"],
+    }
+
     def __init__(self, ressource: StrPath) -> None:
         super().__init__(ressource)
         self.pdf_pike = None
@@ -130,30 +162,26 @@ class Pdf(Livre, suffix="pdf"):
         return wrapper
 
     @besoin_ouverture
-    def from_metadata(self, key) -> Any:
-        return self._metadata.get(key, None)
+    def from_metadata(self, key) -> Iterator[Any]:
+        return filter(bool, map(self._metadata.get, self._CLES[key]))
+
+    def from_metadata_first(self, key) -> Any:
+        return next(self.from_metadata(key), None)
 
     # https://github.com/adobe/XMP-Toolkit-SDK/blob/main/docs/XMPSpecificationPart1.pdf
     # https://developer.adobe.com/xmp/docs/XMPNamespaces/
-
     def titre(self) -> str | None:
-        for value in map(self.from_metadata, ["dc:title", "xmp:Nickname"]):
-            if value:
-                return value
-        return None
+        return self.from_metadata_first("titre") or self.ressource.stem
 
     def auteurs(self) -> list[str]:
-        return self.from_metadata("dc:creator") or []
+        return self.from_metadata_first("auteurs") or []
 
     def sujet(self) -> set[str]:
         # on itère sur les valeurs renvoyées par chaque clé
         # qui peut contenir des sujets
         # et on prend dès qu'on trouve une clé qui fonctionne
         # avec dans l'ordre de priorité du plus au moins courant
-        for value in map(
-            self.from_metadata,
-            ["dc:subject", "xmp:Label", "xmpDM:genre", "pdf:Keywords"],
-        ):
+        for value in self.from_metadata("sujets"):
             if value and isinstance(value, str):
                 return {value}
             if isinstance(value, set):
@@ -163,13 +191,13 @@ class Pdf(Livre, suffix="pdf"):
         return set()
 
     def langue(self) -> set[str]:
-        x = self.from_metadata("dc:language")
+        x = self.from_metadata_first("langue")
         if isinstance(x, str) and x:
             return {x}
         return x or set()
 
     def raw_date(self) -> str | None:
-        return self.from_metadata("dc:date")
+        return self.from_metadata_first("date")
 
     def date_obj(self) -> datetime.datetime | None:
         raw_date = self.raw_date()
@@ -247,11 +275,7 @@ class Epub(Livre, suffix="epub"):
 
         # Récupération de la version du fichier EPUB
         self.version = self.tree_xpath("/opf:package/@version")[0]
-
-        if self.version[:1] != "2":
-            # TODO: gerer epub3
-            msg = "Seuls les fichiers EPUB version 2 sont supportés pour le moment."
-            raise NotImplementedError(msg)
+        self.version_majeure = int(self.version[0])
 
     # La plupart des metadonnées sont stockées dans {meta_dir}/dc:*.
     # Voir: https://www.w3.org/TR/epub-33/#sec-metadata-values
