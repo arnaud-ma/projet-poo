@@ -12,6 +12,8 @@ from zipfile import ZipFile, is_zipfile
 import pikepdf
 from lxml import etree
 
+from biblio.utils import RealPath
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from os import PathLike
@@ -22,16 +24,6 @@ if TYPE_CHECKING:
 def get_contenu_zip(file: StrPath, opf: StrPath) -> bytes:
     with ZipFile(file) as z:
         return z.read(str(opf))
-
-
-class RealPath(Path):
-    """Comme Path mais lance une ValueError si le fichier n'existe pas"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if not self.exists():
-            msg = f"Le chemin {self} n'existe pas."
-            raise ValueError(msg)
 
 
 class base_livre(abc.ABC):

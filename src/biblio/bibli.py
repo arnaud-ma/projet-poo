@@ -1,3 +1,9 @@
+from pathlib import Path
+from typing import Generator
+
+from biblio.utils import RealPath, StrPath
+
+
 class base_bibli:
     def __init__(self, path):
         """path désigne le répertoire contenant les livres de cette bibliothèque"""
@@ -32,3 +38,22 @@ class base_bibli:
         fichier: nom du fichier généré
         """
         raise NotImplementedError("à définir dans les sous-classes")
+
+
+class simple_bibli:
+    path: RealPath
+
+    def __init__(self, path: StrPath):
+        p = Path(path)
+        if not p.exists():
+            p.mkdir()
+        self.path = RealPath(p)
+
+    def livres(self):
+        return (x for x in self.path.glob("*") if x.is_file())
+
+
+if __name__ == "__main__":
+    biblio = simple_bibli("")
+    for livre in biblio.livres():
+        print(livre)
