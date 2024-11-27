@@ -74,6 +74,29 @@ class base_livre(abc.ABC):
 
 
 class Livre(base_livre):
+    """
+    Classe abstraite pour les fichiers de livres.
+
+    Les sous-classes doivent définir les méthodes suivantes:
+    - auteurs, qui renvoie un liste d'auteurs
+    - sujets, qui renvoie un ensemble de sujets
+
+    On peut également redéfinir open() et close() pour ouvrir et fermer le fichier.
+    La syntaxe 'with' est déjà prise en charge dans la classe abstraite.
+
+    La sous-classe doit donner un suffixe pour le type de fichier (pdf, epub, etc.)
+    en utilisant le paramètre de classe 'suffix'. Par exemple, pour les fichiers PDF,
+    on définit la classe comme suit:
+    ```
+    class Pdf(Livre, suffix="pdf"):
+        ...
+    ```
+
+    Attributs:
+    - ressource: le chemin du fichier
+    - SUFFIX: le suffixe du fichier (attribut de classe).
+
+    """
     #  ici seulement pour type hinting et documentation
     SUFFIX: str  # type: ignore[misc]
 
@@ -89,7 +112,6 @@ class Livre(base_livre):
 
     def __init__(self, ressource: StrPath) -> None:
         self.ressource = RealPath(ressource)
-        self._fichier = None
 
     @abc.abstractmethod
     def auteurs(self) -> list[str]: ...
@@ -110,16 +132,26 @@ class Livre(base_livre):
         return f"{self.__class__.__name__}({self.ressource})"
 
     def open(self):
+        """
+        Ouvre le fichier. Doit être appelé avant d'accéder aux métadonnées du fichier,
+        au risque de lever une erreur.
+
+        Préférer l'utilisation de la syntaxe 'with' au lieu de l'appel direct à
+        open() et close().
+        """
         return self
 
     def close(self):
-        """Ferme le fichier. Doit être appelé après avoir ouvert le fichier."""
+        """
+        Ferme le fichier. Doit être appelé après avoir ouvert le fichier.
+        Ne fait rien si le fichier n'est pas ouvert.
+        """
 
     def __enter__(self):
-        return self
+        return self.open()
 
     def __exit__(self, exc_type, exc_value, traceback):
-        pass
+        return self.close()
 
 
 class Pdf(Livre, suffix="pdf"):
@@ -153,7 +185,7 @@ class Pdf(Livre, suffix="pdf"):
             if self.pdf_pike is None:
                 cls_name = self.__class__.__name__
                 msg = (
-                    f"Le fichier PDF n'est pas ouvert. Utiliser {cls_name}.open() ou la syntaxe 'with'"
+                    f"Le fichier {self.ressource} n'est pas ouvert. Utiliser {cls_name}.open() ou la syntaxe 'with'"
                     f" avant d'appeler {cls_name}.{func.__name__}()."
                 )
                 raise ValueError(msg)
@@ -212,25 +244,11 @@ class Pdf(Livre, suffix="pdf"):
         return date.strftime(fmt) if date else None
 
     def open(self):
-        """
-        Ouvre le fichier PDF. Doit toujours être appelé avant d'accéder aux métadonnées
-        du fichier.
-
-        Considérer l'utilisation de la syntaxe 'with' au lieu de l'appel direct à
-        open() et close().
-        """
         self.pdf_pike = pikepdf.open(self.ressource)
         self._metadata = self.pdf_pike.open_metadata()
         return self
 
     def close(self):
-        """
-        Ferme le fichier PDF. Doit toujours être appelé après avoir ouvert le fichier
-        avec PDF.open(). Ne fait rien si le fichier n'est pas ouvert.
-
-        Considérer l'utilisation de la syntaxe 'with' au lieu de l'appel direct à
-        open() et close().
-        """
         if self.pdf_pike is None:
             return
         self.pdf_pike.close()
@@ -254,24 +272,24 @@ class Epub(Livre, suffix="epub"):
     #  Chemin vers le dossier contenant les métadonnées d'un fichier EPUB
     meta_dir: ClassVar = "/opf:package/opf:metadata"
 
-    def __init__(self, file: StrPath) -> None:
-        self.file = Path(file)
+    def __init__(self, ressource: StrPath) -> None:
+        super().__init__(ressource)
 
         # Les fichiers EPUB sont des archives ZIP
-        if not is_zipfile(self.file):
+        if not is_zipfile(self.ressource):
             msg = "Fichier EPUB invalide"
             raise ValueError(msg)
 
         # Récupération du fichier container.xml, qui contient le chemin du fichier OPF
         # (le fichier OPF contient les métadonnées du livre)
-        container = get_contenu_zip(self.file, "META-INF/container.xml")
+        container = get_contenu_zip(self.ressource, "META-INF/container.xml")
 
         # Récupération du chemin du fichier OPF et de son contenu avec lxml.etree
         tree = etree.fromstring(container)  # noqa: S320
         self.opf = Path(
             self.tree_xpath("n:rootfiles/n:rootfile/@full-path", tree=tree)[0],
         )
-        self.tree = etree.fromstring(get_contenu_zip(self.file, self.opf))  # noqa: S320
+        self.tree = etree.fromstring(get_contenu_zip(self.ressource, self.opf))  # noqa: S320
 
         # Récupération de la version du fichier EPUB
         self.version = self.tree_xpath("/opf:package/@version")[0]
@@ -293,9 +311,6 @@ class Epub(Livre, suffix="epub"):
 
     def sujets(self):
         return self.from_metadata_list("dc:subject")
-
-    def sujet(self):
-        return ",".join(self.sujets())
 
     def langue(self):
         return self.from_metadata("dc:language")
