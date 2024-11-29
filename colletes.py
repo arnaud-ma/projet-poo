@@ -16,7 +16,8 @@ def get_Html(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoir
         soup = BeautifulSoup ( reponse.content , "html.parser") # recupere le code html
         return soup
     else:
-       print ("erreur",reponse.status_code)
+        return None
+    
 
 def get_lien_pdf(soup):
     stokURL=[]
@@ -38,6 +39,24 @@ def charger(url):
     pdf.close()
     print("File ", i, " downloaded")
 
+    def charge_tout(source):
+        soup=get_Html(source)
+        if soup!=None:
+           url=get_lien_pdf (soup)
+           i=0
+           while i in range(len(i)):
+                try:
+                   charger(url[i])
+                   i+=1
+                except AttributeError as e:
+                    i+=1
+               
+
+        else:
+            pass
+
+
+
 
 # mini-programe teste
 if __name__=="__main__":
@@ -46,6 +65,7 @@ if __name__=="__main__":
     urls=get_lien_pdf(html)
     for i in urls:
         print(urls)
+ 
  
 
 
