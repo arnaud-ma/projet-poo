@@ -40,7 +40,7 @@ class base_bibli:
         raise NotImplementedError("à définir dans les sous-classes")
 
 
-class simple_bibli:
+class simple_bibli(base_blibli):
     path: RealPath
 
     def __init__(self, path: StrPath):
