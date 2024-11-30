@@ -3,8 +3,8 @@ from bs4 import BeautifulSoup
 import re
 
 class bibli_scrap:
-    def __init__(self,url=[],profondeur=3,nbmax=100):
-        self.url=url
+    def __init__(self,url,profondeur=3,nbmax=100):
+        self.url=[url]
         self.url_visiter=[]
         self.profondeur=profondeur
         self.nbmax=nbmax
@@ -30,7 +30,6 @@ class bibli_scrap:
       for lien in soup.find_all('a',attrs={'href': re.compile("^https://")}):
         if ((domaine and "pdf") in lien.get('href', [])) or((domaine and "epub") in lien.get('href', [])) :
               self.add_url(lien.get('href'))
-      print(self.url)
             
     
     def add_url(self,lien):
@@ -71,4 +70,4 @@ class bibli_scrap:
     
 pass
 
-bibli_scrap(['https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/']).parcourir()
+bibli_scrap('https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/').parcourir()
