@@ -19,7 +19,7 @@ def get_Html(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoir
         return None
     
 
-def get_lien_pdf(soup):
+def get_lien_url(soup):
     stokURL=[]
     # recuper tous les liens ,les stoker dans un tableau
     for lien in soup.find_all('a',attrs={'href': re.compile("^https://")}):
@@ -29,7 +29,7 @@ def get_lien_pdf(soup):
     return stokURL
 
 def charger(url):
-    lien=get_lien_pdf(get_Html(url))
+    lien=get_lien_url(get_Html(url))
    # télécharge le fichier
     response = requests.get(lien.get('href'))
 
@@ -55,16 +55,24 @@ def charger(url):
         else:
             pass
 
+def domaine_site(url):
+      return re.search(r"w?[a-v|x-z][\w%\+-\.]+\.(org|fr|com|net)",url).group()
 
+
+def parcourir(url,url_visiter,nmax):
+        while url and len(url_visiter)< nmax:
+            url=self.url[0]
+            try:
+              get_lien_url(url)
+              return url_visiter.append(url)
+            except AttributeError:
+                print(f"nous ne peuvont pas scroler {url}")
 
 
 # mini-programe teste
 if __name__=="__main__":
 
-    html=get_Html()
-    urls=get_lien_pdf(html)
-    for i in urls:
-        print(urls)
+    print("test")
  
  
 

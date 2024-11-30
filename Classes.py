@@ -1,68 +1,53 @@
+import requests
+from bs4 import BeautifulSoup
+import re
+import numpy
 
+class bibli_scrap:
+    def __init__(self,url=[],profondeur=1,nbmax=1):
+        self.url=url
+        self.url_visiter=[]
+        self.profondeur=profondeur
+        self.nbmax=nbmax
 
-class base_livre:
-  def __init__(self,ressource):
-    """
-        ressource désigne soit le nom de fichier (local) correspondant au livre,
-        soit une URL pointant vers un livre.
-    """
-    raise NotImplementedError("à définir dans les sous-classes")
+    def get_Html(self,source):
+      reponse = requests.get(source) # ouverture et demande les documents html de la page
+      if reponse.status_code==200: # verification de l'ouverture de l'url
+          reponse.text # metre en format texte
+          soup = BeautifulSoup ( reponse.content , "html.parser") # recupere le code html
+          return soup
+      else:
+          return None
+      
+    """je recuper le nom du domaine du site"""
+    def domaine_site(self,url):
+       return re.search(r"w?[a-v|x-z][\w%\+-\.]+\.(org|fr|com|net)",url).group()
+      
 
-  def type(self):
-    """ renvoie le type (EPUB, PDF, ou autre) du livre """
-    raise NotImplementedError("à définir dans les sous-classes")
+    def get_lien_url(self,url):
+      soup= self.get_Html(url)
+      domaine= self.domaine_site(url)
+       
+      for lien in soup.find_all('a',attrs={'href': re.compile("^https://")}):
+        if ((domaine and "pdf") in lien.get('href', [])) or((domaine and "epub") in lien.get('href', [])) :
+              self.add_url(lien.get('href'))
+      print(self.url)
+            
+    
+    def add_url(self,lien):
+         if lien not in self.url and lien not in self.url_visiter:
+             self.url.append(lien)
+             
+    """je parcour le nombre maximale de lien pour les scroler"""
+    def parcourir(self):
+        while self.url and len(self.url_visiter)< self.profondeur:
+            url=self.url[0]
+            try:
+              self.get_lien_url(url)
+              self.url_visiter.append(url)
+            except AttributeError:
+                print(f"nous ne peuvont pas scroler {url}")
+    
+pass
 
-  def titre(self):
-    """ renvoie le titre du livre """
-    raise NotImplementedError("à définir dans les sous-classes")
-
-  def auteur(self):
-    """ renvoie l'auteur du livre """
-    raise NotImplementedError("à définir dans les sous-classes")
-
-  def langue(self):
-    """ renvoie la langue du livre """
-    raise NotImplementedError("à définir dans les sous-classes")
-
-  def sujet(self):
-    """ renvoie le sujet du livre """
-    raise NotImplementedError("à définir dans les sous-classes")
-
-  def date(self):
-    """ renvoie la date de publication du livre """
-    raise NotImplementedError("à définir dans les sous-classes")
-  
-class base_bibli:
-  def __init__(self,path):
-    """ path désigne le répertoire contenant les livres de cette bibliothèque """
-    raise NotImplementedError("à définir dans les sous-classes")
-
-  def ajouter(self,livre):
-    """
-      Ajoute le livre à la bibliothèque """
-    raise NotImplementedError("à définir dans les sous-classes")
-
-  def rapport_livres(self,format,fichier):
-    """
-        Génère un état des livres de la bibliothèque.
-        Il contient la liste des livres,
-        et pour chacun d'eux
-        son titre, son auteur, son type (PDF ou EPUB), et le nom du fichier correspondant.
-
-        format: format du rapport (PDF ou EPUB)
-        fichier: nom du fichier généré
-    """
-    raise NotImplementedError("à définir dans les sous-classes")
-
-  def rapport_auteurs(self,format,fichier):
-    """
-        Génère un état des auteurs des livres de la bibliothèque.
-        Il contient pour chaque auteur
-        le titre de ses livres en bibliothèque et le nom du fichier correspondant au livre.
-        le type (PDF ou EPUB),
-        et le nom du fichier correspondant.
-
-        format: format du rapport (PDF ou EPUB)
-        fichier: nom du fichier généré
-    """
-    raise NotImplementedError("à définir dans les sous-classes")
+bibli_scrap('https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/').parcourir()
