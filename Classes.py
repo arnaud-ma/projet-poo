@@ -4,7 +4,7 @@ import re
 import numpy
 
 class bibli_scrap:
-    def __init__(self,url=[],profondeur=1,nbmax=1):
+    def __init__(self,url=[],profondeur=3,nbmax=100):
         self.url=url
         self.url_visiter=[]
         self.profondeur=profondeur
@@ -37,8 +37,8 @@ class bibli_scrap:
     def add_url(self,lien):
          if lien not in self.url and lien not in self.url_visiter:
              self.url.append(lien)
-             
-    """je parcour le nombre maximale de lien pour les scroler"""
+
+    """je parcour le nombre maximal de lien pour les scroler"""
     def parcourir(self):
         while self.url and len(self.url_visiter)< self.profondeur:
             url=self.url[0]
@@ -47,7 +47,9 @@ class bibli_scrap:
               self.url_visiter.append(url)
             except AttributeError:
                 print(f"nous ne peuvont pas scroler {url}")
+
+
     
 pass
 
-bibli_scrap('https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/').parcourir()
+bibli_scrap(['https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/']).parcourir()

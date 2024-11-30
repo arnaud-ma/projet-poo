@@ -39,21 +39,9 @@ def charger(url):
     pdf.close()
     print("File ", i, " downloaded")
 
-    def charge_tout(source):
-        soup=get_Html(source)
-        if soup!=None:
-           url=get_lien_pdf (soup)
-           i=0
-           while i in range(len(i)):
-                try:
-                   charger(url[i])
-                   i+=1
-                except AttributeError as e:
-                    i+=1
-               
-
-        else:
-            pass
+def charge_tout(source):
+    for i in source;
+        charger(i)
 
 def domaine_site(url):
       return re.search(r"w?[a-v|x-z][\w%\+-\.]+\.(org|fr|com|net)",url).group()
