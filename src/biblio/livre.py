@@ -26,6 +26,15 @@ def get_contenu_zip(file: StrPath, opf: StrPath) -> bytes:
         return z.read(str(opf))
 
 
+class NotSupportedMimeError(NotImplementedError):
+    def __init__(self, mime=""):
+        m = repr(mime) if mime else ""
+        self.msg = f"le type mime {m} n'est pas supporté"
+
+    def __str__(self):
+        return self.msg
+
+
 class base_livre(abc.ABC):
     def __init__(self, ressource):
         """
@@ -90,20 +99,37 @@ class Livre(base_livre):
 
     """
     #  ici seulement pour type hinting et documentation
-    SUFFIX: str  # type: ignore[misc]
+    SUFFIX: ClassVar[str]
+    SUFFIXES: ClassVar[dict[str, type[Livre]]] = {}
+    TYPE_MIME: ClassVar[str]
+    TYPES_MIME: ClassVar[dict[str, type[Livre]]] = {}
 
-    def __init_subclass__(cls, suffix=None) -> None:
+    def __init_subclass__(
+        cls,
+        suffix: str | None = None,
+        type_mime: str | None = None,
+    ) -> None:
         """Comme __init__ mais appelé seulement à la création de chaque sous-classe"""
         super().__init_subclass__()
 
         if not isabstract(cls) and suffix is None:
             msg = "Les sous-classes de Livre doivent avoir un suffixe."
             raise ValueError(msg)
-
+        cls.SUFFIXES[suffix] = cls  # type: ignore[misc]
         cls.SUFFIX = suffix  # type: ignore[misc]
+
+        if type_mime is not None:
+            cls.TYPES_MIME[type_mime] = cls
+        cls.TYPE_MIME = cls  # type: ignore[misc]
 
     def __init__(self, ressource: StrPath) -> None:
         self.ressource = RealPath(ressource)
+
+    @classmethod
+    def depuis_type_mime(cls, type_mime: str):
+        if type_mime not in cls.TYPES_MIME:
+            raise NotSupportedMimeError(type_mime)
+        return cls.TYPES_MIME[type_mime]
 
     @abc.abstractmethod
     def auteurs(self) -> list[str]: ...
@@ -146,12 +172,12 @@ class Livre(base_livre):
         return self.close()
 
 
-class Pdf(Livre, suffix="pdf"):
+class Pdf(Livre, suffix="pdf", type_mime="application/pdf"):
     """Classe pour les fichiers PDF."""
 
     """
     Les clés de métadonnées sont stockées dans un dictionnaire de listes.
-    LA liste correspond à l'ordre de priorité des clés, pour un nom de clé donné.
+    La liste correspond à l'ordre de priorité des clés, pour un nom de clé donné.
     """
     _CLES: ClassVar = {
         "auteurs": ["dc:creator"],
@@ -200,7 +226,7 @@ class Pdf(Livre, suffix="pdf"):
     def auteurs(self) -> list[str]:
         return self.from_metadata_first("auteurs") or []
 
-    def sujet(self) -> set[str]:
+    def sujets(self) -> set[str]:
         # on itère sur les valeurs renvoyées par chaque clé
         # qui peut contenir des sujets
         # et on prend dès qu'on trouve une clé qui fonctionne
@@ -221,9 +247,12 @@ class Pdf(Livre, suffix="pdf"):
         return x or set()
 
     def raw_date(self) -> str | None:
+        """Renvoie la date de publication du fichier PDF sous forme de chaîne de caractères,
+        avec un format qui est défini par le pdf lui-même."""
         return self.from_metadata_first("date")
 
     def date_obj(self) -> datetime.datetime | None:
+        """Renvoie la date de publication du fichier PDF sous forme d'objet datetime."""
         raw_date = self.raw_date()
         if raw_date is None:
             return None
@@ -253,16 +282,16 @@ class Pdf(Livre, suffix="pdf"):
         self.close()
 
 
-class Epub(Livre, suffix="epub"):
+class Epub(Livre, suffix="epub", type_mime="application/epub+zip"):
     # Définition des namespaces XML pour les éléments spécifiques d'un fichier EPUB
-    namespaces_xml: ClassVar = {
+    NAMESPACES_XML: ClassVar = {
         "n": "urn:oasis:names:tc:opendocument:xmlns:container",
         "opf": "http://www.idpf.org/2007/opf",
         "dc": "http://purl.org/dc/elements/1.1/",
     }
 
     #  Chemin vers le dossier contenant les métadonnées d'un fichier EPUB
-    meta_dir: ClassVar = "/opf:package/opf:metadata"
+    META_DIR: ClassVar = "/opf:package/opf:metadata"
 
     def __init__(self, ressource: StrPath) -> None:
         super().__init__(ressource)
@@ -290,10 +319,10 @@ class Epub(Livre, suffix="epub"):
     # La plupart des metadonnées sont stockées dans {meta_dir}/dc:*.
     # Voir: https://www.w3.org/TR/epub-33/#sec-metadata-values
     def from_metadata(self, key) -> str | None:
-        return self.xpath_str(f"{self.meta_dir}/{key}")
+        return self.xpath_str(f"{self.META_DIR}/{key}")
 
     def from_metadata_list(self, key) -> list[str]:
-        return self.tree_xpath_liststr(f"{self.meta_dir}/{key}")
+        return self.tree_xpath_liststr(f"{self.META_DIR}/{key}")
 
     def titre(self):
         return self.from_metadata("dc:title")
@@ -329,4 +358,4 @@ class Epub(Livre, suffix="epub"):
 
     def tree_xpath(self, path, tree: etree._Element | None = None) -> Any:
         tree = self.tree if tree is None else tree
-        return tree.xpath(str(path), namespaces=self.namespaces_xml)
+        return tree.xpath(str(path), namespaces=self.NAMESPACES_XML)
