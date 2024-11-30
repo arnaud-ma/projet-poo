@@ -40,7 +40,7 @@ def charger(url):
     print("File ", i, " downloaded")
 
 def charge_tout(source):
-    for i in source;
+    for i in source:
         charger(i)
 
 def domaine_site(url):
@@ -56,6 +56,19 @@ def parcourir(url,url_visiter,nmax):
             except AttributeError:
                 print(f"nous ne peuvont pas scroler {url}")
 
+
+def attribue_livre(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
+    reponse = requests.get(source) # recpere le contenu de la page
+    print(reponse.status_code)
+    if reponse.status_code==200: # verification de l'ouverture de l'url
+        soup = BeautifulSoup ( reponse.content , "html.parser") # recupere le code html
+        livres=soup.find_all("div",class_="Libros_Container")
+
+        for livre in livres:
+            try:
+                nom_livrres = livre.find("p",class_="Libros_Titulo").text
+            except AttributeError as e:
+                nom_livrres=" "
 
 # mini-programe teste
 if __name__=="__main__":

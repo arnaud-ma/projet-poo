@@ -48,7 +48,24 @@ class bibli_scrap:
             except AttributeError:
                 print(f"nous ne peuvont pas scroler {url}")
 
+    """je telecharge les fichiers"""
+    def telecharger(self):
+      for i in self.url_visiter:
+        # je recuper les attribues du livre
+        nom_livrres=self.get_Html(i).find("p",class_="Libros_Titulo").text
+        if "pdf" in i:
+         attribue= ".pdf"
+        else:
+          attribue= ".epub" 
 
+        # télécharge le fichier  
+        response = requests.get(i.get('href'))
+      
+        # sauvgarder le fichier
+        pdf = open(nom_livrres+str(i)+ attribue, 'wb')
+        pdf.write(response.content)
+        pdf.close()
+        print("File ", i, " downloaded")
     
 pass
 
