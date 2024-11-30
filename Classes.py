@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 import re
-import numpy
 
 class bibli_scrap:
     def __init__(self,url=[],profondeur=3,nbmax=100):
@@ -48,7 +47,10 @@ class bibli_scrap:
             except AttributeError:
                 print(f"nous ne peuvont pas scroler {url}")
 
-    """je telecharge les fichiers"""
+    """je telecharge les fichiers
+    
+    PS: JE N'EST PAS EN TESTER LA FONCTION TELEGHARGER
+    """
     def telecharger(self):
       for i in self.url_visiter:
         # je recuper les attribues du livre
