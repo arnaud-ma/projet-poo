@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 from zipfile import ZipFile, is_zipfile
 
+import markdown2 as markdown
+import pandoc
 import pikepdf
+import weasyprint
 from lxml import etree
 
 from biblio.utils import RealPath
@@ -95,41 +98,53 @@ class Livre(base_livre):
 
     Attributs:
     - ressource: le chemin du fichier
-    - SUFFIX: le suffixe du fichier (attribut de classe).
-
+    - is_open: un booléen pour savoir si le fichier est ouvert ou non
+    - TYPE_MIME: le type MIME du fichier (attribut de classe)
+    - TYPES_MIME: un dictionnaire contenant les types MIME des sous-classes de Livre
+        (attribut commun à toutes les sous-classes)
     """
+
     #  ici seulement pour type hinting et documentation
-    SUFFIX: ClassVar[str]
-    SUFFIXES: ClassVar[dict[str, type[Livre]]] = {}
     TYPE_MIME: ClassVar[str]
     TYPES_MIME: ClassVar[dict[str, type[Livre]]] = {}
+    SUFFIX: ClassVar[str]
+    SUFFIXES: ClassVar[dict[str, type[Livre]]] = {}
 
     def __init_subclass__(
         cls,
         suffix: str | None = None,
-        type_mime: str | None = None,
+        mime_type: str | None = None,
     ) -> None:
         """Comme __init__ mais appelé seulement à la création de chaque sous-classe"""
         super().__init_subclass__()
 
-        if not isabstract(cls) and suffix is None:
-            msg = "Les sous-classes de Livre doivent avoir un suffixe."
+        if isabstract(cls):
+            return
+        if mime_type is None or suffix is None:
+            msg = "Les sous-classes de Livre doivent avoir un suffixe et un type MIME."
             raise ValueError(msg)
-        cls.SUFFIXES[suffix] = cls  # type: ignore[misc]
-        cls.SUFFIX = suffix  # type: ignore[misc]
 
-        if type_mime is not None:
-            cls.TYPES_MIME[type_mime] = cls
+        cls.SUFFIX = suffix  # type: ignore[misc]
+        cls.SUFFIXES[suffix] = cls  # type: ignore[misc]
+        cls.TYPES_MIME[mime_type] = cls  # type: ignore[misc]
         cls.TYPE_MIME = cls  # type: ignore[misc]
 
     def __init__(self, ressource: StrPath) -> None:
-        self.ressource = RealPath(ressource)
+        self.ressource = Path(ressource)
+        self.is_open = False
+
+    def __fspath__(self):
+        """Renvoie le chemin du fichier. Utilisé par open(), Path(), etc."""
+        return str(self.ressource)
 
     @classmethod
-    def depuis_type_mime(cls, type_mime: str):
-        if type_mime not in cls.TYPES_MIME:
-            raise NotSupportedMimeError(type_mime)
-        return cls.TYPES_MIME[type_mime]
+    def depuis_mime_type(cls, mime_type: str):
+        if mime_type not in cls.TYPES_MIME:
+            raise NotSupportedMimeError(mime_type)
+        return cls.TYPES_MIME[mime_type]
+
+    def type(self):
+        return self.SUFFIX.upper()
 
     @abc.abstractmethod
     def auteurs(self) -> list[str]: ...
@@ -143,43 +158,74 @@ class Livre(base_livre):
     def sujet(self) -> str:
         return ",".join(self.sujets())
 
-    def type(self):
-        return self.SUFFIX.upper()
-
     def __repr__(self):
         return f"{self.__class__.__name__}({self.ressource})"
 
-    def open(self):
+    def __str__(self):
+        try:
+            x = self.titre()
+        except (ValueError, NotImplementedError):
+            x = self.ressource.stem
+        else:
+            if x is None:
+                x = self.ressource.name
+        return x
+
+    def rapport_livre_markdown(
+        self,
+        content=("titre", "auteur", "type"),
+        start="## ",
+        end="",
+        if_falsy="Non renseigné",
+    ):
         """
-        Ouvre le fichier. Doit être appelé avant d'accéder aux métadonnées du fichier,
-        au risque de lever une erreur.
+        Renvoie un rapport en format markdown pour le livre.
 
-        Préférer l'utilisation de la syntaxe 'with' au lieu de l'appel direct à
-        open() et close().
+        Args:
+          - content: une liste de noms de méthodes à appeler (dans le même ordre)
+            pour obtenir le contenu du rapport. Chaque nom de méthode doit exister
+            dans la classe sinon une erreur sera levée. Par défaut, ("titre", "auteur", "type").
+          - start: le texte à ajouter au début du rapport. Par défaut, un titre de niveau 2 (##).
+          - end: le texte à ajouter à la fin du rapport. Par défaut, une chaîne vide.
+          - if_falsy: la valeur à afficher si le contenu est vide. Par défaut, "Non renseigné".
         """
-        return self
+        content = {func_name: getattr(self, func_name)() for func_name in content}
+        content_str = "\n".join(
+            f"- **{key}** : {value or if_falsy}" for key, value in content.items()
+        )
+        return f"{start}{self.ressource.name} \n\n{content_str}{end}"
 
-    def close(self):
+    @abc.abstractmethod
+    def write_from_markdown(self, content_markdown: str, /):
+        """Transforme le contenu markdown en un fichier du type du livre et l'écrit.
+
+        Exemple:
+        ```
+        mon_livre = Pdf("mon_livre.pdf")
+        mon_livre.write_from_markdown("# Titre de mon livre sous format PDF")
+        ```
         """
-        Ferme le fichier. Doit être appelé après avoir ouvert le fichier.
-        Ne fait rien si le fichier n'est pas ouvert.
-        """
-
-    def __enter__(self):
-        return self.open()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        return self.close()
 
 
-class Pdf(Livre, suffix="pdf", type_mime="application/pdf"):
+def besoin_metadata(func):
+    @functools.wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if not self.already_init:
+            self._init_meta()
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
+class Pdf(Livre, suffix="pdf", mime_type="application/pdf"):
     """Classe pour les fichiers PDF."""
 
-    """
-    Les clés de métadonnées sont stockées dans un dictionnaire de listes.
-    La liste correspond à l'ordre de priorité des clés, pour un nom de clé donné.
-    """
-    _CLES: ClassVar = {
+    # Les clés de métadonnées sont stockées dans un dictionnaire de listes.
+    # La liste correspond à l'ordre de priorité des clés, pour un nom de clé donné.
+    # Pour savoir d'où viennent le nom des clés, voir:
+    # https://github.com/adobe/XMP-Toolkit-SDK/blob/main/docs/XMPSpecificationPart1.pdf
+    # https://developer.adobe.com/xmp/docs/XMPNamespaces/
+    _CLES_METADATA: ClassVar = {
         "auteurs": ["dc:creator"],
         "date": ["dc:date"],
         "langue": ["dc:language"],
@@ -189,42 +235,38 @@ class Pdf(Livre, suffix="pdf", type_mime="application/pdf"):
 
     def __init__(self, ressource: StrPath) -> None:
         super().__init__(ressource)
-        self.pdf_pike = None
+        self.already_init = False
 
-    @staticmethod
-    def besoin_ouverture(func):
-        """
-        Decorateur qui modifie la fonction pour renvoyer automatiquement une erreur
-        si le fichier PDF n'est pas ouvert.
-        """
+    def _init_meta(self):
+        self.already_init = True
+        self.pdf_pike = pikepdf.Pdf.open(self.ressource)
+        self._metadata = self.pdf_pike.open_metadata()
 
-        @functools.wraps(func)
-        def wrapper(self: Pdf, *args, **kwargs):
-            if self.pdf_pike is None:
-                cls_name = self.__class__.__name__
-                msg = (
-                    f"Le fichier {self.ressource} n'est pas ouvert. Utiliser {cls_name}.open() ou la syntaxe 'with'"
-                    f" avant d'appeler {cls_name}.{func.__name__}()."
-                )
-                raise ValueError(msg)
-            return func(self, *args, **kwargs)
-
-        return wrapper
-
-    @besoin_ouverture
+    @besoin_metadata
     def from_metadata(self, key) -> Iterator[Any]:
-        return filter(bool, map(self._metadata.get, self._CLES[key]))
+        return filter(bool, map(self._metadata.get, self._CLES_METADATA[key]))
 
     def from_metadata_first(self, key) -> Any:
         return next(self.from_metadata(key), None)
 
-    # https://github.com/adobe/XMP-Toolkit-SDK/blob/main/docs/XMPSpecificationPart1.pdf
-    # https://developer.adobe.com/xmp/docs/XMPNamespaces/
     def titre(self) -> str | None:
         return self.from_metadata_first("titre") or self.ressource.stem
 
     def auteurs(self) -> list[str]:
-        return self.from_metadata_first("auteurs") or []
+        extracted_authors = self.from_metadata("auteurs")
+        # extracted est de type is Iterable[str | list[str]]
+        # il faut le transformer en une liste de str
+        if not extracted_authors:
+            return []
+        result = []
+        for author in extracted_authors:
+            if isinstance(author, str):
+                result.append(author)
+            elif isinstance(author, list):
+                result.extend(author)
+
+        # supprime les doublons tout en conservant l'ordre
+        return list(dict.fromkeys(result))
 
     def sujets(self) -> set[str]:
         # on itère sur les valeurs renvoyées par chaque clé
@@ -264,25 +306,12 @@ class Pdf(Livre, suffix="pdf", type_mime="application/pdf"):
         date = self.date_obj()
         return date.strftime(fmt) if date else None
 
-    def open(self):
-        self.pdf_pike = pikepdf.open(self.ressource)
-        self._metadata = self.pdf_pike.open_metadata()
-        return self
-
-    def close(self):
-        if self.pdf_pike is None:
-            return
-        self.pdf_pike.close()
-        self.pdf_pike = None
-
-    def __enter__(self):
-        return self.open()
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.close()
+    def write_from_markdown(self, content: str):
+        html = markdown.markdown(content)
+        weasyprint.HTML(string=html).write_pdf(self.ressource)
 
 
-class Epub(Livre, suffix="epub", type_mime="application/epub+zip"):
+class Epub(Livre, suffix="epub", mime_type="application/epub+zip"):
     # Définition des namespaces XML pour les éléments spécifiques d'un fichier EPUB
     NAMESPACES_XML: ClassVar = {
         "n": "urn:oasis:names:tc:opendocument:xmlns:container",
@@ -295,7 +324,10 @@ class Epub(Livre, suffix="epub", type_mime="application/epub+zip"):
 
     def __init__(self, ressource: StrPath) -> None:
         super().__init__(ressource)
+        self.already_init = False
 
+    def _init_meta(self):
+        self.already_init = True
         # Les fichiers EPUB sont des archives ZIP
         if not is_zipfile(self.ressource):
             msg = "Fichier EPUB invalide"
@@ -356,6 +388,11 @@ class Epub(Livre, suffix="epub", type_mime="application/epub+zip"):
         """
         return [node.text for node in self.tree_xpath(path) if node is not None]
 
+    @besoin_metadata
     def tree_xpath(self, path, tree: etree._Element | None = None) -> Any:
         tree = self.tree if tree is None else tree
         return tree.xpath(str(path), namespaces=self.NAMESPACES_XML)
+
+    def write_from_markdown(self, content: str):
+        doc = pandoc.read(content, format="markdown")
+        pandoc.write(doc, self.ressource, format="epub")
