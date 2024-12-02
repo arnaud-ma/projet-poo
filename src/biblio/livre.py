@@ -100,7 +100,10 @@ class Livre(base_livre):
     - ressource: le chemin du fichier
     - is_open: un booléen pour savoir si le fichier est ouvert ou non
     - TYPE_MIME: le type MIME du fichier (attribut de classe)
+    - SUFFIX: le suffixe du fichier (attribut de classe)
     - TYPES_MIME: un dictionnaire contenant les types MIME des sous-classes de Livre
+        (attribut commun à toutes les sous-classes)
+    - SUFFIXES: un dictionnaire contenant les suffixes des sous-classes de Livre
         (attribut commun à toutes les sous-classes)
     """
 
