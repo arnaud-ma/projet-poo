@@ -13,6 +13,7 @@ Ou en clonant le dépôt:
 ```bash
 git clone https://github.com/arnaud-ma/projet-poo
 cd projet-poo
+pip install .
 ```
 
 Pour de nombreux formats, il est nécessaire d'installer [`pandoc`](https://pandoc.org/installing.html) pour convertir les fichiers.
