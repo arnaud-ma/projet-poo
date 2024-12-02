@@ -142,10 +142,3 @@ class simple_bibli(set[Livre], base_bibli):
         ):
             p.unlink()
         super().discard(livre)
-
-
-if __name__ == "__main__":
-    biblio = simple_bibli("temp/", max_livres=10)
-    # biblio.rapport_livres("pdf", "rapport.pdf", progressbar=True)
-    biblio.rapport_livres("pdf", "rapport_auteurs.pdf")
-    print(biblio.get_auteurs())

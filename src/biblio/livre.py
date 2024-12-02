@@ -9,13 +9,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, TypeAlias
 from zipfile import ZipFile, is_zipfile
 
-import markdown2 as markdown
 import pandoc
 import pikepdf
-import weasyprint
 from lxml import etree
-
-from biblio.utils import RealPath
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -92,7 +88,7 @@ class Livre(base_livre):
     en utilisant le paramètre de classe 'suffix'. Par exemple, pour les fichiers PDF,
     on définit la classe comme suit:
     ```
-    class Pdf(Livre, suffix="pdf"):
+    class Pdf(Livre, suffix="pdf", mime_type="application/pdf"):
         ...
     ```
 
@@ -160,6 +156,13 @@ class Livre(base_livre):
 
     def sujet(self) -> str:
         return ",".join(self.sujets())
+
+    @abc.abstractmethod
+    def date_obj(self) -> datetime.datetime | None: ...
+
+    def date(self, fmt="%d/%m/%Y") -> str | None:
+        date = self.date_obj()
+        return date.strftime(fmt) if date else None
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.ressource})"
@@ -305,13 +308,9 @@ class Pdf(Livre, suffix="pdf", mime_type="application/pdf"):
             return datetime.datetime.fromisoformat(raw_date)
         return None
 
-    def date(self, fmt="%d/%m/%Y") -> str | None:
-        date = self.date_obj()
-        return date.strftime(fmt) if date else None
-
     def write_from_markdown(self, content: str):
-        html = markdown.markdown(content)
-        weasyprint.HTML(string=html).write_pdf(self.ressource)
+        doc = pandoc.read(content, format="markdown")
+        pandoc.write(doc, self.ressource, format="pdf")
 
 
 class Epub(Livre, suffix="epub", mime_type="application/epub+zip"):
@@ -371,8 +370,17 @@ class Epub(Livre, suffix="epub", mime_type="application/epub+zip"):
     def langue(self):
         return self.from_metadata("dc:language")
 
-    def date(self):
+    def raw_date(self) -> str | None:
         return self.from_metadata("dc:date")
+
+    def date_obj(self) -> datetime.datetime | None:
+        """Renvoie la date de publication du fichier PDF sous forme d'objet datetime."""
+        raw_date = self.raw_date()
+        if raw_date is None:
+            return None
+        with contextlib.suppress(ValueError):
+            return datetime.datetime.fromisoformat(raw_date)
+        return None
 
     def xpath_str(self, path) -> str | None:
         """

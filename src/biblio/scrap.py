@@ -1,5 +1,4 @@
 import logging
-import re
 import urllib
 import urllib.parse
 from pathlib import Path
@@ -136,7 +135,6 @@ class bibli_scrap(bibli):
             visited.add(url)
             try:
                 for url_, mime in self.gen_url_mime_from_url(url, *args, **kwargs):
-                    print(url_)
                     if mime in Livre.TYPES_MIME:
                         compteur_livres += 1
                         yield (url_, mime)
@@ -144,7 +142,6 @@ class bibli_scrap(bibli):
                             return
                     elif MIME_HTML in mime:
                         if url_ not in visited:
-                            print(url_)
                             yield from dfs(url_, profondeur_actuelle + 1)
             except Exception as e:
                 if not ignore_log:
@@ -164,15 +161,3 @@ class bibli_scrap(bibli):
             **kwargs,
         ):
             self.alimenter_fichier_url(url_livre, *args, type_mime=mime, **kwargs)
-
-
-def main():
-    print("main")
-    logger.setLevel(logging.DEBUG)
-    biblio = bibli_scrap("temp/")
-    url = "https://math.univ-angers.fr/~jaclin/biblio/livres/"
-    biblio.scrap(url, nbmax=10, verify=False)
-
-
-if __name__ == "__main__":
-    main()
