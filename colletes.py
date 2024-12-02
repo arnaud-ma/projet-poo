@@ -9,73 +9,76 @@ from bs4 import BeautifulSoup
 # Etape 3: filter les liens pour n'avoir que des pdf (avec requests body)
 # Etape 4: telecharger le contenu de tous les pdf avec write
 
-def get_Html(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
-    reponse = requests.get(source) # ouverture et demande les documents html de la page
-    if reponse.status_code==200: # verification de l'ouverture de l'url
-        reponse.text # metre en format texte
-        soup = BeautifulSoup ( reponse.content , "html.parser") # recupere le code html
+
+def get_Html(
+    source="https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/",
+):
+    reponse = requests.get(source)  # ouverture et demande les documents html de la page
+    if reponse.status_code == 200:  # verification de l'ouverture de l'url
+        reponse.text  # metre en format texte
+        soup = BeautifulSoup(reponse.content, "html.parser")  # recupere le code html
         return soup
     else:
         return None
-    
+
 
 def get_lien_url(soup):
-    stokURL=[]
+    stokURL = []
     # recuper tous les liens ,les stoker dans un tableau
-    for lien in soup.find_all('a',attrs={'href': re.compile("^https://")}):
-       if ('.pdf' in lien.get('href', [])):
-            stokURL= numpy.append (stokURL,lien.get('href'))
-   
+    for lien in soup.find_all("a", attrs={"href": re.compile("^https://")}):
+        if ".pdf" in lien.get("href", []):
+            stokURL = numpy.append(stokURL, lien.get("href"))
+
     return stokURL
 
+
 def charger(url):
-    lien=get_lien_url(get_Html(url))
-   # télécharge le fichier
-    response = requests.get(lien.get('href'))
+    lien = get_lien_url(get_Html(url))
+    # télécharge le fichier
+    response = requests.get(lien.get("href"))
 
     # sauvgarder le fichier
-    pdf = open("pdf"+str(i)+".pdf", 'wb')
+    pdf = open("pdf" + str(i) + ".pdf", "wb")
     pdf.write(response.content)
     pdf.close()
     print("File ", i, " downloaded")
+
 
 def charge_tout(source):
     for i in source:
         charger(i)
 
+
 def domaine_site(url):
-      return re.search(r"w?[a-v|x-z][\w%\+-\.]+\.(org|fr|com|net)",url).group()
+    return re.search(r"w?[a-v|x-z][\w%\+-\.]+\.(org|fr|com|net)", url).group()
 
 
-def parcourir(url,url_visiter,nmax):
-        while url and len(url_visiter)< nmax:
-            url=self.url[0]
-            try:
-              get_lien_url(url)
-              return url_visiter.append(url)
-            except AttributeError:
-                print(f"nous ne peuvont pas scroler {url}")
+def parcourir(url, url_visiter, nmax):
+    while url and len(url_visiter) < nmax:
+        url = self.url[0]
+        try:
+            get_lien_url(url)
+            return url_visiter.append(url)
+        except AttributeError:
+            print(f"nous ne peuvont pas scroler {url}")
 
 
-def attribue_livre(source='https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/'):
-    reponse = requests.get(source) # recpere le contenu de la page
+def attribue_livre(
+    source="https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/",
+):
+    reponse = requests.get(source)  # recpere le contenu de la page
     print(reponse.status_code)
-    if reponse.status_code==200: # verification de l'ouverture de l'url
-        soup = BeautifulSoup ( reponse.content , "html.parser") # recupere le code html
-        livres=soup.find_all("div",class_="Libros_Container")
+    if reponse.status_code == 200:  # verification de l'ouverture de l'url
+        soup = BeautifulSoup(reponse.content, "html.parser")  # recupere le code html
+        livres = soup.find_all("div", class_="Libros_Container")
 
         for livre in livres:
             try:
-                nom_livrres = livre.find("p",class_="Libros_Titulo").text
+                nom_livrres = livre.find("p", class_="Libros_Titulo").text
             except AttributeError as e:
-                nom_livrres=" "
+                nom_livrres = " "
+
 
 # mini-programe teste
-if __name__=="__main__":
-
+if __name__ == "__main__":
     print("test")
- 
- 
-
-
-
