@@ -50,7 +50,7 @@ class simple_bibli(set[Livre], base_bibli):
         super().__init__()
         p = Path(path)
         if not p.exists():
-            p.mkdir()
+            p.mkdir(parents=True, exist_ok=True)
         self.path = RealPath(p)
         self.max_livres = max_livres
         self.update_livres()

@@ -1,33 +1,129 @@
+import logging
 import re
+import urllib
+import urllib.parse
+from pathlib import Path
 
 import requests
 from bs4 import BeautifulSoup
 
 from biblio.bibli import simple_bibli
+from biblio.livre import Livre
+
+logger = logging.getLogger(__name__)
 
 
-class bibli_scrap(simple_bibli):
+def check_response(response):
+    try:
+        response.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        msg = f"Erreur HTTP: {e}"
+        logger.exception(msg)
+        return False
+    except requests.exceptions.Timeout as e:
+        msg = f"Timeout: {e}"
+        logger.exception(msg)
+        return False
+    except Exception as e:
+        msg = f"Erreur inconnue lors de la récupération de la page: {e}"
+        logger.exception(msg)
+        return False
+    return True
+
+class bibli(simple_bibli):
+
+    def find_unique_path(self, path: Path) -> Path:
+        stem = path.stem
+        filenames = set(self.path.iterdir())
+        i = 1
+        while path in filenames:
+            path = path.with_stem(f"{stem}_{i}")
+            i += 1
+        return path
+
+    @staticmethod
+    def check_http_url(url):
+        if not url.startswith(("http:", "https:")):
+            msg = f"L'URL doit commencer par http: ou https: (url={url})"
+            logger.error(msg)
+            return False
+        return True
+
+    @staticmethod
+    def get_mime_type_from_url(url):
+        response = requests.head(url, timeout=5)
+        mime_type = response.headers.get("Content-Type")
+        if mime_type not in Livre.TYPES_MIME:
+            return None
+        return mime_type
+
+    def alimenter(self, url, *, verify=True):
+        if not self.check_http_url(url):
+            return
+
+        # récupération du type MIME
+        mime_type = self.get_mime_type_from_url(url)
+        if mime_type is None:
+            msg = f"Type MIME non supporté pour l'URL {url}"
+            logger.error(msg)
+            return
+
+        # récupération du fichier
+        # puis trouver un nom de fichier unique pour le stocker
+        # et enfin créer un objet Livre correspondant
+        response = requests.get(url, timeout=5, verify=verify)
+        url_parsed = urllib.parse.urlparse(url)
+        filename = Path(url_parsed.path).name
+        path_livre = self.find_unique_path(Path(self.path) / filename)
+        path_livre.write_bytes(response.content)
+        livre = Livre.depuis_mime_type(mime_type)(path_livre)
+        self.ajouter(livre)
+
+
+def main():
+    biblio = bibli("temp/")
+    biblio.alimenter(
+        "https://math.univ-angers.fr/~jaclin/biblio/livres/abbot_flatland.pdf",
+        verify=False,
+    )
+    biblio.rapport_livres("pdf", "rapport.pdf")
+
+
+if __name__ == "__main__":
+    main()
+
+
+class bibli_scrap(bibli):
     def __init__(self, url, profondeur=3, nbmax=100):
         self.url = [url]
         self.url_visiter = []
         self.profondeur = profondeur
         self.nbmax = nbmax
 
-    def get_Html(self, source):
-        reponse = requests.get(
-            source,
-        )  # ouverture et demande les documents html de la page
-        if reponse.status_code == 200:  # verification de l'ouverture de l'url
-            reponse.text  # metre en format texte
-            soup = BeautifulSoup(
-                reponse.content,
-                "html.parser",
-            )  # recupere le code html
-            return soup
-        return None
+    def get_html(self, source):
+        # ouverture et demande les documents html de la page
+        reponse = requests.get(source, timeout=5)
 
-    """je recuper le nom du domaine du site"""
+        # je verifie si la page est bien ouverte
+        try:
+            reponse.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            msg = f"Erreur HTTP: {e}"
+            logger.exception(msg)
+            return None
+        except requests.exceptions.Timeout as e:
+            msg = f"Timeout: {e}"
+            logger.exception(msg)
+            return None
+        except Exception as e:
+            msg = f"Erreur inconnue lors de la récupération de la page: {e}"
+            logger.exception(msg)
+            return None
 
+        # je recupere le contenu de la page
+        return BeautifulSoup(reponse.content, "html.parser")
+
+    """je recupere le nom du domaine du site"""
     def domaine_site(self, url):
         return re.search(r"w?[a-v|x-z][\w%\+-\.]+\.(org|fr|com|net)", url).group()
 
@@ -80,6 +176,6 @@ class bibli_scrap(simple_bibli):
             print("File ", i, " downloaded")
 
 
-bibli_scrap(
-    "https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/",
-).parcourir()
+# bibli_scrap(
+#     "https://infolivres.org/livres-gratuits-pdf/histoire/histoire-de-rome/",
+# ).parcourir()
