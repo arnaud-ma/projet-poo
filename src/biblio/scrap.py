@@ -5,12 +5,15 @@ import urllib.parse
 from pathlib import Path
 
 import requests
+import urllib3
 from bs4 import BeautifulSoup
 
 from biblio.bibli import simple_bibli
 from biblio.livre import Livre
 
 logger = logging.getLogger(__name__)
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def check_response(response):
@@ -30,6 +33,7 @@ def check_response(response):
         return False
     return True
 
+
 class bibli(simple_bibli):
 
     def find_unique_path(self, path: Path) -> Path:
@@ -42,30 +46,32 @@ class bibli(simple_bibli):
         return path
 
     @staticmethod
-    def check_http_url(url):
+    def check_http_url(url, *, ignore_log=False):
         if not url.startswith(("http:", "https:")):
-            msg = f"L'URL doit commencer par http: ou https: (url={url})"
-            logger.error(msg)
+            if not ignore_log:
+                msg = f"L'URL doit commencer par http: ou https: (url={url})"
+                logger.error(msg)
             return False
         return True
 
     @staticmethod
-    def get_mime_type_from_url(url):
-        response = requests.head(url, timeout=5)
+    def get_mime_type_from_url(url, *args, **kwargs):
+        response = requests.head(url, *args, timeout=5, **kwargs)
         mime_type = response.headers.get("Content-Type")
         if mime_type not in Livre.TYPES_MIME:
             return None
         return mime_type
 
-    def alimenter(self, url, *, verify=True):
-        if not self.check_http_url(url):
+    def alimenter_fichier_url(self, url, *, verify=True, ignore_log=False):
+        if not self.check_http_url(url, ignore_log=ignore_log):
             return
 
         # récupération du type MIME
-        mime_type = self.get_mime_type_from_url(url)
+        mime_type = self.get_mime_type_from_url(url, verify=verify)
         if mime_type is None:
-            msg = f"Type MIME non supporté pour l'URL {url}"
-            logger.error(msg)
+            if not ignore_log:
+                msg = f"Type MIME non supporté pour l'URL {url}"
+                logger.error(msg)
             return
 
         # récupération du fichier
@@ -79,11 +85,27 @@ class bibli(simple_bibli):
         livre = Livre.depuis_mime_type(mime_type)(path_livre)
         self.ajouter(livre)
 
+    @staticmethod
+    def livre_generator_from_url(url, *, verify=True):
+        response = requests.get(url, timeout=5, verify=verify)
+        if not check_response(response):
+            return
+        soup = BeautifulSoup(response.content, "html.parser")
+
+        def join_url(a):
+            return urllib.parse.urljoin(url, a["href"])
+
+        yield from map(join_url, soup.find_all("a", href=True))
+
+    def alimenter(self, url, *, verify=True):
+        for url_livre in self.livre_generator_from_url(url, verify=verify):
+            self.alimenter_fichier_url(url_livre, verify=verify)
+
 
 def main():
     biblio = bibli("temp/")
     biblio.alimenter(
-        "https://math.univ-angers.fr/~jaclin/biblio/livres/abbot_flatland.pdf",
+        "https://math.univ-angers.fr/~jaclin/biblio/livres/",
         verify=False,
     )
     biblio.rapport_livres("pdf", "rapport.pdf")
